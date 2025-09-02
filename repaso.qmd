@@ -1,0 +1,311 @@
+---
+title: "REPASO"
+format: html
+editor: visual
+---
+
+---
+title: "Descargar datos de internet con `tidyquant`"
+format: html
+---
+
+# Datos
+
+```{r}
+#| message: false
+
+library(tidyverse)
+library(fpp3)
+library(tidyquant) #<1>
+```
+
+1.  Cargamos la librería `tidyquant` que nos permite descargar datos económicos de internet (entre otras cosas).
+
+## Descarga
+
+Vamos a utilizar `tq_get()` para descargar los datos
+
+```{r}
+exports <- tq_get(       #<6>     
+  x = "EXPMX",           #<1>
+  get = "economic.data", #<2>
+  from = "1985-01-01",   #<3>
+  to = "2023-07-01"      #<4>
+)
+exports                  #<5>
+```
+
+1.  El nombre de la(s) serie(s) que queremos descargar. En este caso, las exportaciones de EEUU a México (EXPMX).
+2.  El tipo de dato y fuente de donde queremos descargarlos. En este caso, datos económicos del **FRED**.
+3.  Fecha de inicio de los datos.
+4.  Fecha final de los datos.
+5.  La tabla resultante es una `tibble`.
+6.  Tq?get es para descragar datos es una fuente
+
+La `tibble` resultante tenemos que convertirla a `tsibble` y asegurarnos de que la variable de fecha tiene el formato correcto.
+
+## `tsibble`
+
+```{r}
+exports <- exports |> 
+  mutate(date = yearmonth(date)) |> #<1>
+  as_tsibble(index = date)          #<2>
+exports
+```
+
+1.  Convertimos la variable `date` a formato `yearmonth`.
+2.  Convertimos la `tibble` a `tsibble`, indicando que la variable de fecha es `date`.
+3.  tsibble este en el formato de periocidiad de año mees
+
+# EDA
+
+```{r}
+exports |> 
+  autoplot(price)
+```
+
+```{r}
+#vamos a estabiliar la varianz 
+# Calcular lambda con el método de Guerrero
+exp_lambda <- exports |>
+  features(price, features = guerrero) |>
+  pull(lambda_guerrero)
+
+exp_lambda
+
+# Graficar serie transformada con Box-Cox
+exports |>
+  autoplot(box_cox(price, exp_lambda))
+
+# Gráfico estacional con Box-Cox
+exports |>
+  gg_season(box_cox(price, exp_lambda))
+```
+
+```{r}
+exports |> 
+  model(STL(box_cox(price, exp_lambda), robust=TRUE)) |> #<1>
+  components() |> 
+  autoplot()
+```
+
+1.  robust suaviza mas la serie haciendo que si hay outliers no los tome en cuenta y se vaya al componnete resiudal y no afecte la tendencia
+
+# Ejercicio
+
+1.  Realizar un pronóstico a dos años para la serie (de agosto 2023 a julio de 2025).
+2.  Pueden utilizar cualquier método que hemos visto en clase.
+3.  Se puede realizar en parejas.
+4.  Entregar un informe en `Quarto` con el análisis y el pronóstico.
+5.  La métrica de error a utilizar para calcular la precisión del pronóstico será el **MAE**.
+6.  Fecha de entrega: 19 de septiembre.
+
+```{r}
+exports_train <- exports |> 
+  filter_index(. ~ "2021 Jul")
+exports_train
+```
+
+## Modelo benchmark (de referencia)
+
+Dado que la serie tiene tendencia y estacionalidad, utilizar alguno de los métodos básicos por sí solo no produciría un buen modelo. Por lo tanto, vamos a utilizar un modelo de descomposición con drift y seasonal naive.
+
+```{r}
+exports_fit <- exports_train |> 
+  model(
+    base = decomposition_model(
+      STL(box_cox(price, exp_lambda) ~ season(window = "periodic"), robust = TRUE),
+      RW(season_adjust ~ drift()),
+      SNAIVE(season_year)
+    ),
+    media = MEAN(box_cox(price, exp_lambda)),
+    naive = NAIVE(box_cox(price, exp_lambda)),
+    hw = ETS(box_cox(price, exp_lambda) ~ error("A") + trend("A") + season("A")),
+    tend_amort = ETS(box_cox(price, exp_lambda) ~ error("A") + trend("Ad") + season("N"))
+  )
+
+exports_fit
+```
+
+```{r}
+#| warning: false
+
+accuracy(exports_fit) |> 
+  arrange(MAE)
+
+exports_fit |> 
+  select(base) |> 
+  gg_tsresiduals() +
+  ggtitle("Diagnóstico de residuos para el modelo base")
+```
+
+```{r}
+exports_fc <- exports_fit |> 
+  forecast(h = "2 years")
+
+exports_fc
+
+exports_fc |> 
+  accuracy(exports) |> 
+  arrange(MAE)
+
+p <- exports_fc |> 
+  autoplot(exports, level = NULL)
+
+plotly::ggplotly(p, dynamicTicks = TRUE)
+```
+
+```{r}
+
+#Tomamos la tabla de pronosticos 
+exports_fc |>
+  #usamos accuracy() y tambien de la tabla comleta  acurracy sirve para pa preccion del modelo 
+  accuracy(exports)|>
+  arrange(RMSE)# arrange() esto hace que los ordenen de manera descendente 
+```
+
+```{r}
+#| eval: false
+
+exports_fit |> 
+  select(base) |>        #<1>
+  refit(exports) |>       #<2>
+  forecast(h = "2 years") #<3>
+```
+
+Estamos graficando al ACF es decir la autocorrelacion que aun existe entre si misma
+
+1.  Seleccionamos el modelo que queremos utilizar para el pronóstico final.
+2.  Reajustamos el modelo con todos los datos disponibles.
+3.  Realizamos el pronóstico a dos años.
+
+```{r}
+exports_aug <- exports_fit |> 
+  #pra obetener residuos usamos augment()
+  augment()
+exports_aug
+```
+
+```{r}
+exports_aug |> 
+  autoplot(.innov) +
+  facet_wrap(~.model, ncol = 1, scales = "free_y")
+
+
+```
+
+::: callout-important
+## sobre la función `refit()`
+
+La función `refit()` desafortunadamente `Si`refit()`no funciona con el modelo que eligieron, tienen que reentrenar manualmente el modelo final con los datos completos (reemplazar en este caso`exports_train`por`exports\`).
+
+```{r}
+exports_final_fit <- exports |>                                                   #<1>
+  model(
+    base = decomposition_model(
+      STL(box_cox(price, exp_lambda) ~ season(window = "periodic"), robust = TRUE),
+      RW(season_adjust ~ drift()),
+      SNAIVE(season_year)
+    )
+  )
+
+exports_final_fit
+```
+
+1.  Copiamos la especificación del mejor modelo, y solo cambiamos los datos: antes usábamos los datos de entrenamiento (`exports_train`); ahora utilizamos todos los datos (`exports`).
+:::
+
+```{r}
+exports_final_fc <- exports_final_fit |> 
+  forecast(h = "2 years")
+
+exports_final_fc
+
+exports_final_fc |> 
+  autoplot(exports)
+
+p <- exports_final_fc |> 
+  autoplot(exports, level = NULL)
+
+plotly::ggplotly(p, dynamicTicks = TRUE)
+```
+
+## tendencia lineal
+
+```{r}
+holt <- exports_train |> 
+  model(
+    holt = ETS(price ~ error("A") + trend("A") + season("N"))
+  )
+
+holt
+
+report(holt)
+```
+
+```{r}
+holt |> 
+  forecast(h = "2 years") |> 
+  autoplot(exports)
+```
+
+## SES(suavizamineto exponencial simple )
+
+```{r}
+ses <- exports_train |> 
+  model(
+    ses = ETS(price ~                 #<1>
+                error("A") +        #<2>
+                trend("N") +        #<3>
+                season("N"))        #<3>
+  )
+
+ses
+
+
+```
+
+```{r}
+
+report(ses)
+```
+
+```{r}
+exports_recent <- exports |>
+  filter_index("2021 Q1" ~.)
+
+```
+
+```{r}
+ses |> 
+  forecast(h = "2 years") |>
+  autoplot(exports_recent)
+```
+
+```{r}
+exports_trend <- exports_train |> 
+  model(
+    holt = ETS(price ~ error("A") + trend("A") + season("N")),
+    tend_amort = ETS(price ~ error("A") + trend("Ad") + season("N"))
+  )                                         # Ad lo hace para tendencias amoritiguada
+
+exports_trend
+
+exports_trend |> 
+  select(tend_amort) |> 
+  report()
+
+exports_trend |> 
+  forecast(h = "30 years") |> 
+  autoplot(exports, level = NULL)
+```
+
+```{r}
+eq_10 <- exports_final_fc |> 
+  filter(.model == "base") |> 
+  mutate(.model = "eq_10")
+
+eq_10
+
+save(eq_10, file = "eq_10.RData")
+```
