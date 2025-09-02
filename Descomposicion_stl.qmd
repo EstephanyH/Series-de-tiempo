@@ -1,0 +1,57 @@
+---
+title: "DESCOMPOSICION_STL"
+format: html
+editor: visual
+---
+
+## Descomposicion en stl(solo hay additivas)
+
+Lo unico que cambia aqui es lo que le indicamos al modelo manualmmete la **tendencia(trend)** la mas utilizada *(window)* y **estacionalidad** **(season)** que lamas usada es period= year, mont o peridodica esto quiere decir que va ser la misma a lo largo del timepo
+
+aqui podemos especificra la tendencia y estacionalidad.
+
+## 
+
+```{r}
+medicinas_stl <- medicinas |>
+  #para especificar la tendencia trend() , es importante que sean numero impares y se pueda definir la tendencia mas suave  O  podemos ponerle window= NULL
+  model(stl= STL(Cost~trend(window=NULL)+season(window="Periodic"))) |>
+  components()
+
+medicinas_stl |>
+  autoplot()
+  
+```
+
+**y si queremos estabilizar la varianza ?...pues lo hacemos con Logaritmos**
+
+```{r}
+
+medicinas_stl <- medicinas |>
+  model(
+    stl = STL(log(Cost) ~ trend(window = NULL) + season(window = "periodic"))
+  ) |>
+  components()
+
+medicinas_stl |>
+  autoplot(log(Cost))
+
+
+
+```
+
+```{r}
+medicinas_stl <- medicinas |>
+  #para especificar la tendencia trend() , es importante que sean numero impares y se pueda definir la tendencia mas suave  O  podemos ponerle window= NULL
+  model(stl= STL(log(Cost)~trend(window=NULL)+season(window="Periodic"),robust(TRUE)) |>
+  components()
+
+```
+
+Vamos a modificar manualmente un valor para convertirlo en outlier y ver como afecta a la descomposicion
+
+```{r}
+medicinas_mod <- medicinas
+medicinas_mod$Cost
+
+```
