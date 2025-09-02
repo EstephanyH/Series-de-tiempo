@@ -1,5 +1,5 @@
 ---
-title: "Descomposisiones"
+title: "DescomposisioN_ cLASICA "
 format: html
 editor: visual
 ---
@@ -55,11 +55,19 @@ medicinas |>
 
 Como habiamos visto, la serie tienen una tendencia a la alza y un fuerte patron estacional, entonces hacemos LA DESCOMPOSICION CLASSICA tal como lo hicimos en exel.
 
+Aqui utilizando **model()** donde este nos va a permitir hacer varios modelos con esta funcion y su estructura es la siguiente
+
+*model( nombre_variable= tipo de modelo a utilizar(Nombre variable y a graficar, type= tipo de serie multiplicativa o additiva))*
+
 ```{r}
  
 # puedo correr linea por liena para saber que hace cada linea 
 # descomponemos en descoposision clasica 
+
 medicinas_dcmp <- medicinas |>
+  #model entrena cualquier modelo de definiciones ( entrenar mas de un modelo a la ves)
+                      #tipo de modelo su fincion (podemos utilizar con model muchos modelos)
+                      # desoues ponemos la variable Y o la que quiero model (Cost),definir la descomposicion multiplicativa
   model(dcmp_clasica = classical_decomposition(Cost, type = "multiplicative")) |>
   components()
 
@@ -68,6 +76,25 @@ medicinas_dcmp
 medicinas_dcmp |> 
   ggplot(aes(y = Cost, x = fecha)) +
   geom_line(color = "grey") +
+  geom_line(aes(y = season_adjust), color = "blue")
+
+medicinas_dcmp |> 
+  autoplot()
+
+```
+
+Segundo ejemplo con dos modeloa calcular addtivo y multiplicativo
+
+```{r}
+model(dcmp_clasica = classical_decomposition(Cost, type = "multiplicative"),
+      dcmp_classical_add= classical_decomposition((Cost, type= "additive"))) |>
+  components()
+
+medicinas_dcmp
+
+medicinas_dcmp |> 
+  ggplot(aes(y = Cost, x = fecha)) +
+  geom_line(color = "green") +
   geom_line(aes(y = season_adjust), color = "blue")
 
 medicinas_dcmp |> 
