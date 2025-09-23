@@ -309,3 +309,38 @@ eq_10
 
 save(eq_10, file = "eq_10.RData")
 ```
+
+```{r}
+STLF <- decomposition_model(
+      STL(box_cox(Gas, gas_lambda) ~ season(window = "periodic"), robust=TRUE),
+      RW(season_adjust ~ drift()),
+      SNAIVE(season_year)
+    )
+  
+STLF_holt <- decomposition_model(
+      STL(box_cox(Gas, gas_lambda) ~ season(window = "periodic")),
+      ETS(season_adjust ~ error("A")+ trend("Ad")+ season ("N")),
+      SNAIVE(season_year)
+    )
+
+gas_fit <- gas_train |>
+  model(
+    sanive= SNAIVE(box_cox(Gas, gas_lambda)),
+    stlf= STLF,
+    STLF_holt=STLF_holt
+    
+    
+  )
+gas_fcst <- gas_fit |> 
+  forecast(h="3 years")
+
+ p<- gas_fcst |> 
+   autoplot(aus_prod_recent, level = NULL)
+ 
+plotly::ggplotly(p)
+ 
+ gas_fcst |> 
+   accuracy(aus_production) |> 
+   arrange(MAPE)
+   
+```
